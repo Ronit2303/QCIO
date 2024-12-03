@@ -1,11 +1,20 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import './App.css';
+import { Line, Pie} from 'react-chartjs-2'; // import the line chart
+import Papa from 'papaparse'; // for csv parsing
+import { Chart as ChartJS, LineElement, CategoryScale, LinearScale, PointElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
+
+
+//register Chart.js components
+ChartJS.register( LineElement, CategoryScale, LinearScale, PointElement, Title, Tooltip, Legend, ArcElement);
 
 function App() {
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [isLoggedIn, setIsLoggedIn] = useState(false);
   const [showResearch, setShowResearch] = useState(false);
+  const [showAssetAllocator, setShowAssetAllocator] = useState(false);
+  const [showEconomicScenarioGenerator, setShowEconomicScenarioGenerator] = useState(false);
 
   const handleSubmit = (e) => {
     e.preventDefault();
@@ -20,14 +29,32 @@ function App() {
     setShowResearch(true);
   };
 
+  const handleAssetAllocatorClick = () => {
+    setShowAssetAllocator(true);
+  };
+
+  const handleEconomicScenarioGeneratorClick = () => {
+    setShowEconomicScenarioGenerator(true);
+  };
+
   const handleBackToDashboard = () => {
+    setShowAssetAllocator(false);
     setShowResearch(false);
+    setShowEconomicScenarioGenerator(false);
   };
 
   if (isLoggedIn) {
     return (
       <div>
-        {showResearch ? <Research onBackClick={handleBackToDashboard} /> : <Dashboard onResearchClick={handleResearchClick} />}
+        {showResearch ? (
+          <Research onBackClick={handleBackToDashboard} />
+        ) : showAssetAllocator ? (
+          <AssetAllocator onBackClick={handleBackToDashboard} />
+        ) : showEconomicScenarioGenerator ? (
+          <EconomicScenarioGenerator onBackClick={handleBackToDashboard} />
+        ) : ( 
+          <Dashboard onResearchClick={handleResearchClick} onAssetAllocatorClick={handleAssetAllocatorClick} onEconomicScenarioGeneratorClick={handleEconomicScenarioGeneratorClick} />
+        )}
       </div>
     );
   }
@@ -68,7 +95,7 @@ function App() {
   );
 }
 
-function Dashboard({ onResearchClick }) {
+function Dashboard({ onResearchClick, onAssetAllocatorClick, onEconomicScenarioGeneratorClick }) {
   // Function to handle opening Power BI
   const openPowerBI = () => {
     window.open('https://app.powerbi.com/groups/2673eb6f-64b6-4ba2-853a-f3f124c592b7/reports/86d39a1e-b770-4408-9012-885ae47269fd/ReportSection4a97d59c9ccb5a98d184?ctid=ca56a4a5-e300-406a-98ff-7e36a0baac5b&experience=power-bi&clientSideAuth=0', '_blank');
@@ -86,8 +113,12 @@ function Dashboard({ onResearchClick }) {
         <div className="dashboard-item" onClick={openPowerBI} style={{ cursor: 'pointer '}}>
           Dynamic Portfolio Benchmark (DPB)
         </div>
-        <div className="dashboard-item">Asset Allocator</div>
-        <div className="dashboard-item">Economic Scenario Generator (ESG)</div>
+        <div className="dashboard-item" onClick={onAssetAllocatorClick} style={{ cursor: 'pointer'}}>
+          Asset Allocator
+        </div>
+        <div className="dashboard-item" onClick={onEconomicScenarioGeneratorClick} style={{ cursor: 'pointer'}}>
+          Economic Scenario Generator (ESG)
+          </div>
         <div className="dashboard-item">More to come!</div>
       </div>
       <footer className="footer">
@@ -233,5 +264,304 @@ function Research({ onBackClick }) {
     </div>
   );
 }
+
+const AssetAllocator = ({ onBackClick }) => {
+  const [lineChartData, setLineChartData] = useState(null);
+  const [pieChartData, setPieChartData] = useState(null);
+  const [yScale, setYScale] = useState({ min: null, max: null});
+
+  useEffect(() => {
+    //Automatically read the CSV file from public folder
+    fetch('/data/RealLevel_short.csv') //CSV file in the public folder for Line chart
+      .then((response) => response.text())
+      .then((csvData) => processLineChartCSV(csvData));
+
+    fetch('/data/weights_output_13W.csv') //CSV file in the public folder for Pie chart
+      .then((response) => response.text())
+      .then((csvData) => processPieChartCSV(csvData));
+  }, []);
+
+  const processLineChartCSV = (csvData) => {
+    Papa.parse(csvData, {
+      header: true,
+      dynamicTyping: true,
+      complete: (parsedData) => {
+        const labels = [];
+        const datasets = [];
+        let minY = Infinity;
+        let maxY = -Infinity;
+
+        //Initialize datasets for each column except 'date'
+        parsedData.data.forEach((row) => {
+        labels.push(row['date']);
+        Object.keys(row).forEach((column) => {
+          if (column !== 'date') {
+            if (!datasets[column]) {
+              datasets[column] = [];
+            }
+            const value = row[column];
+            datasets[column].push(value);
+            // Update min and max for Y-axis scaling
+            if (value < minY) minY = value;
+            if (value > maxY) maxY = value;
+          }
+        });
+      });
+
+      //Define a color palette
+      const colors = [
+        'rgba(75, 192, 192, 1)',
+        'rgba(255, 99, 132, 1)',
+        'rgba(54, 162, 235, 1)',
+        'rgba(255, 206, 86, 1)',
+        'rgba(153, 102, 255, 1)',
+        'rgba(255, 159, 64, 1)',
+      ];
+
+      //Prepare data for chart.js format
+      const chartData = {
+        labels,
+        datasets: Object.keys(datasets).map((key, index) => ({
+          label: key,
+          data: datasets[key],
+          fill: false,
+          borderColor: colors[index % colors.length], //Assign a color from the palette
+          tension: 0.1,
+        })),
+      };
+
+      setLineChartData(chartData);
+      setYScale({ min: minY, max: maxY });
+    },
+  });
+};
+
+const processPieChartCSV = (csvData) => {
+  Papa.parse(csvData, {
+    header: true,
+    dynamicTyping: true,
+    complete: (parsedData) => {
+      const lastRow = parsedData.data[parsedData.data.length - 1];
+      const labels = [];
+      const values = [];
+
+      // skip the first column and process the rest
+      Object.entries(lastRow).forEach(([key, value], index) => {
+        if (index > 0) { // skip the first column
+          labels.push(key);
+          values.push(Math.abs(value)); //Take absolute values to handle negative
+        }
+      });
+
+      const chartData = {
+        labels,
+        datasets: [
+          {
+            data: values,
+            backgroundColor: [
+              'rgba(75, 192, 192, 0.5)',
+              'rgba(255, 99, 132, 0.5)',
+              'rgba(54, 162, 235, 0.5)',
+              'rgba(255, 206, 86, 0.5)',
+              'rgba(153, 102, 255, 0.5)',
+              'rgba(255, 159, 64, 0.5)',
+            ],
+            borderColor: [
+              'rgba(75, 192, 192, 1)',
+              'rgba(255, 99, 132, 1)',
+              'rgba(54, 162, 235, 1)',
+              'rgba(255, 206, 86, 1)',
+              'rgba(153, 102, 255, 1)',
+              'rgba(255, 159, 64, 1)',
+            ],
+            borderWidth: 1,
+          },
+        ],
+      };
+
+      setPieChartData(chartData);
+    },
+  });
+};
+
+const lineChartOptions = {
+  responsive: true,
+  plugins: {
+    legend: {
+      position: 'top',
+    },
+    title: {
+      display: true,
+      text: 'Real Level short',
+    },
+  },
+  scales: {
+    y: {
+      beginAtZero: false,
+      min: yScale.min,   
+      max: yScale.max,
+    },
+  },
+};
+
+const pieChartOptions = {
+  responsive: true,
+  plugins: {
+    legend: {
+      position: 'bottom',
+    },
+    title: {
+      display: true,
+      text: 'Weights Outputs',
+    },
+  },
+}
+
+return (
+  <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+    {lineChartData && (
+      <div style={{ width: '80%', margin: '20px 0'}}>
+        <h3>Line Chart</h3>
+        <Line data={lineChartData} options={lineChartOptions} />
+      </div>
+    )}
+    {pieChartData && (
+        <div style={{ width: '50%', margin: '20px 0'}}>
+          <h3>Pie Chart</h3>
+          <Pie data={pieChartData} options={pieChartOptions} />
+        </div>
+      )}
+    <button onClick={onBackClick} style={{ marginTop: '20px', padding: '10px 20px', cursor: 'pointer' }}>
+      Back to Dashboard
+    </button>
+  </div>
+  );
+};
+
+const EconomicScenarioGenerator = ({ onBackClick }) => {
+  const [data1, setData1] = useState([]);
+  const [data2, setData2] = useState([]);
+  const [data3, setData3] = useState([]);
+  const [selectedRow, setselectedRow] = useState(0);
+  const [chartData, setchartData] = useState(null);
+
+  useEffect(() => {
+    //load the three CSV files
+    Promise.all([
+      fetch('/ESG/EUGOV10Y.csv').then((res) => res.text()),
+      fetch('/ESG/Flt_CMBS_BBB.csv').then((res) => res.text()),
+      fetch('/ESG/JPYTONAR6M.csv').then((res) => res.text()),
+    ])
+    .then(([csv1, csv2, csv3]) => {
+      parseCSV(csv1, setData1);
+      parseCSV(csv2, setData2);
+      parseCSV(csv3, setData3);
+    });
+
+  }, []);
+
+  useEffect(() => {
+    if (data1.length > 0 && data2.length > 0 && data3.length > 0) {
+      updateChart();
+    }
+  }, [data1, data2, data3, selectedRow]);
+
+  const parseCSV = (csvData, setData) => {
+    Papa.parse(csvData, {
+      header: false, //No Headers
+      dynamicTyping: true,
+      complete: (parsedData) => {
+        const rows = parsedData.data.filter(
+          (row) => row.length > 0 && row.every((value) => typeof value === 'number')
+        ); //Exclude empty or invalid rows
+        setData(rows);
+      },
+    });
+  };
+
+  const updateChart = () => {
+    if (!data1[selectedRow] || !data2[selectedRow] || !data3[selectedRow]) {
+      console.error("Row data is undefined. Please check the selected row and CSV files.");
+      return;
+    }
+
+    const row1 = data1[selectedRow];
+    const row2 = data2[selectedRow];
+    const row3 = data3[selectedRow];
+
+    if (!row1.length || !row2.length || !row3.length) {
+      console.error("One of the rows is empty. Please check the CSV files.");
+      return;
+    }
+
+    const xValues = Array.from({ length: row1.length }, (_, i) => i + 1); //x-axis: indices
+
+    const datasets = [
+      {
+        label: 'EUGOV10Y',
+        data: row1,
+        borderColor: 'rgba(75, 192, 192, 1)',
+        tension: 0.1,
+      },
+      {
+        label: 'Flt_CMBS_BBB',
+        data: row2,
+        borderColor: 'rgba(255, 99, 132, 1)',
+        tension: 0.1,
+      },
+      {
+        label: 'JPYTONAR6M',
+        data: row3,
+        borderColor: 'rgba(54, 162, 235, 1)',
+        tension: 0.1,
+      },
+    ];
+
+    setchartData({
+      labels: xValues,
+      datasets,
+    });
+  };
+
+  const handleRowChange = (e) => {
+    setselectedRow(Number(e.target.value));
+  };
+
+  return (
+    <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
+      <h2>Economic Scenario Generator (ESG)</h2>
+      <div>
+        <label>Select Row: </label>
+        <select onChange={handleRowChange} value={selectedRow}>
+          {data1.map((_, index) => (
+            <option key={index} value={index}>
+              Row {index + 1}
+            </option>
+          ))}
+        </select>
+      </div>
+      {chartData && (
+        <div style={{ width: '80%', margin: '20px 0' }}>
+          <Line
+            data={chartData}
+            options={{
+              responsive: true,
+              plugins: {
+                legend: { position: 'top' },
+                title: { display: true, text: 'ESG module'},
+              },
+              scales: {
+                y: { beginAtZero: false },
+              },
+            }}
+          />
+        </div>
+      )}
+      <button onClick={onBackClick} style={{ marginTop: '20px', padding: '10px 20px', cursor: 'pointer' }}>
+        Back to Dashboard
+      </button>
+    </div>
+  );
+};
 
 export default App;

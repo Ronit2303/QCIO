@@ -89,7 +89,7 @@ function App() {
         <p>Don’t have an account? <a href="/register">Register here</a></p>
       </div>
       <footer className="footer">
-        <img src="https://www.metlife.com/images/metlife-logo.svg" alt="MetLife Investment Management" />
+        <img src={'${process.env.PUBLIC_URL}/metlife_logo.png'} alt="MetLife Investment Management" />
       </footer>
     </div>
   );
@@ -338,20 +338,15 @@ const AssetAllocator = ({ onBackClick }) => {
 
 const processPieChartCSV = (csvData) => {
   Papa.parse(csvData, {
-    header: true,
+    header: false,
+    skipEmptyLines: true,
     dynamicTyping: true,
     complete: (parsedData) => {
-      const lastRow = parsedData.data[parsedData.data.length - 1];
-      const labels = [];
-      const values = [];
+      const data = parsedData.data;
 
-      // skip the first column and process the rest
-      Object.entries(lastRow).forEach(([key, value], index) => {
-        if (index > 0) { // skip the first column
-          labels.push(key);
-          values.push(Math.abs(value)); //Take absolute values to handle negative
-        }
-      });
+      const labels = data[0].slice(1); //Exclude first column for labels
+      const lastRow = data[data.length - 1];
+      const values = lastRow.slice(1); //Exclude first column (date)
 
       const chartData = {
         labels,

@@ -1,5 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useCallback, useEffect, useState } from 'react';
 import './App.css';
+import * as XLSX from 'xlsx';
 import { Line, Pie} from 'react-chartjs-2'; // import the line chart
 import Papa from 'papaparse'; // for csv parsing
 import { Chart as ChartJS, LineElement, CategoryScale, LinearScale, PointElement, Title, Tooltip, Legend, ArcElement } from 'chart.js';
@@ -43,6 +44,12 @@ function App() {
     setShowEconomicScenarioGenerator(false);
   };
 
+  const handleLogout = () => {
+    setIsLoggedIn(false);
+    setUsername('');
+    setPassword('');
+  }
+
   if (isLoggedIn) {
     return (
       <div>
@@ -53,7 +60,7 @@ function App() {
         ) : showEconomicScenarioGenerator ? (
           <EconomicScenarioGenerator onBackClick={handleBackToDashboard} />
         ) : ( 
-          <Dashboard onResearchClick={handleResearchClick} onAssetAllocatorClick={handleAssetAllocatorClick} onEconomicScenarioGeneratorClick={handleEconomicScenarioGeneratorClick} />
+          <Dashboard onResearchClick={handleResearchClick} onAssetAllocatorClick={handleAssetAllocatorClick} onEconomicScenarioGeneratorClick={handleEconomicScenarioGeneratorClick} onLogout={handleLogout} />
         )}
       </div>
     );
@@ -86,16 +93,16 @@ function App() {
         </div>
       </form>
       <div className="register">
-        <p>Don’t have an account? <a href="/register">Register here</a></p>
+        <p>Don't have an account? <a href="/register">Register here</a></p>
       </div>
       <footer className="footer">
-        <img src={'${process.env.PUBLIC_URL}/metlife_logo.png'} alt="MetLife Investment Management" />
+        <img src="/metlife_logo.png" alt="MetLife Investment Management" />
       </footer>
     </div>
   );
 }
 
-function Dashboard({ onResearchClick, onAssetAllocatorClick, onEconomicScenarioGeneratorClick }) {
+function Dashboard({ onResearchClick, onAssetAllocatorClick, onEconomicScenarioGeneratorClick, onLogout }) {
   // Function to handle opening Power BI
   const openPowerBI = () => {
     window.open('https://app.powerbi.com/groups/2673eb6f-64b6-4ba2-853a-f3f124c592b7/reports/86d39a1e-b770-4408-9012-885ae47269fd/ReportSection4a97d59c9ccb5a98d184?ctid=ca56a4a5-e300-406a-98ff-7e36a0baac5b&experience=power-bi&clientSideAuth=0', '_blank');
@@ -121,8 +128,9 @@ function Dashboard({ onResearchClick, onAssetAllocatorClick, onEconomicScenarioG
           </div>
         <div className="dashboard-item">More to come!</div>
       </div>
+      <button onClick={onLogout} className="logout-button">Logout</button>
       <footer className="footer">
-        <img src="https://www.metlife.com/images/metlife-logo.svg" alt="MetLife Investment Management" />
+        <img src="/metlife_logo.png" alt="MetLife Investment Management" />
       </footer>
     </div>
   );
@@ -134,6 +142,7 @@ function Research({ onBackClick }) {
   const [all, setall] = useState('All');
   const [frequency, setFrequency] = useState('All');
   const [type, setType] = useState('All');
+  const [spreadsheetData, setSpreadsheetData] = useState(null);
 
   // PDF array with frequency and type properties
   const pdfs = [
@@ -166,6 +175,18 @@ function Research({ onBackClick }) {
     );
   });
 
+  const handleSpreadsheetClick = (file) => {
+    fetch(file)
+      .then((res) => res.arrayBuffer())
+      .then((data) => {
+        const workbook = XLSX.read(data, { type: 'array' });
+        const sheetName = workbook.SheetNames[0];
+        const sheet = workbook.Sheets[sheetName];
+        const parsedData = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+        setSpreadsheetData(parsedData);
+      });
+  };
+
   return (
     <div className="research-container">
       <h2>Research Publications</h2>
@@ -191,12 +212,12 @@ function Research({ onBackClick }) {
             <option value="Spreadsheet">Spreadsheet</option>
           </select>
 
-          <div className="pdf-list"> 
+          <div className="pdf-list">
             {filteredPdfs.map((pdf, index) => (
               <div key={index} className="pdf-item">
                 <h4>{pdf.title}</h4>
                 <p>{pdf.date} {pdf.author} {pdf.count}</p>
-                <a href={pdf.file} target="_blank" rel="noopener noreferrer">View PDF</a>
+                <a href={pdf.file} target="_blank" rel="noopener noreferrer">View</a>
               </div>
             ))}
           </div>
@@ -250,13 +271,33 @@ function Research({ onBackClick }) {
             {filteredPdfs.map((pdf, index) => (
               <div key={index} className="pdf-item">
                 <h4>{pdf.title}</h4>
-                <p>{pdf.date} {pdf.author} {pdf.count}</p>
-                <a href={pdf.file} target="_blank" rel="noopener noreferrer">View PDF</a>
+                <p>{pdf.date}</p>
+                {pdf.all === 'Spreadsheet' ? (
+                  <button onClick={() => handleSpreadsheetClick(pdf.file)}>View Spreadsheet</button>
+                ) : (
+                  <a href={pdf.file} target="_blank" rel="noopener noreferrer">View PDF</a>
+                )}
               </div>
             ))}
           </div>
+          {spreadsheetData && (
+        <div className="spreadsheet-viewer">
+          <h3>Spreadsheet Data:</h3>
+          <table>
+            <tbody>
+              {spreadsheetData.map((row, rowIndex) => (
+                <tr key={rowIndex}>
+                  {row.map((cell, cellIndex) => (
+                    <td key={cellIndex}>{cell}</td>
+                  ))}
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </div>
       )}
+    </div>
+    )}
       
       <button className='back-button' onClick={onBackClick}>
         Back to Dashboard
@@ -455,11 +496,7 @@ const EconomicScenarioGenerator = ({ onBackClick }) => {
 
   }, []);
 
-  useEffect(() => {
-    if (data1.length > 0 && data2.length > 0 && data3.length > 0) {
-      updateChart();
-    }
-  }, [data1, data2, data3, selectedRow]);
+  
 
   const parseCSV = (csvData, setData) => {
     Papa.parse(csvData, {
@@ -474,7 +511,7 @@ const EconomicScenarioGenerator = ({ onBackClick }) => {
     });
   };
 
-  const updateChart = () => {
+  const updateChart = useCallback(() => {
     if (!data1[selectedRow] || !data2[selectedRow] || !data3[selectedRow]) {
       console.error("Row data is undefined. Please check the selected row and CSV files.");
       return;
@@ -516,11 +553,17 @@ const EconomicScenarioGenerator = ({ onBackClick }) => {
       labels: xValues,
       datasets,
     });
-  };
+  });
 
   const handleRowChange = (e) => {
     setselectedRow(Number(e.target.value));
   };
+
+  useEffect(() => {
+    if (data1.length > 0 && data2.length > 0 && data3.length > 0) {
+      updateChart();
+    }
+  }, [data1, data2, data3, selectedRow, updateChart]);
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center' }}>
